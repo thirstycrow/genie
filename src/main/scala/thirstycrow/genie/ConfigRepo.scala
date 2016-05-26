@@ -30,7 +30,7 @@ trait ConfigRepo {
 
   object rich {
 
-    def get[T: Manifest](path: String): Future[Config[T]] = {
+    def get[T](path: String)(implicit t: T DefaultsTo String, m: Manifest[T]): Future[Config[T]] = {
       ConfigRepo.this.get(path).map(bytes => bytes.map(ConfigSerializer[T]().fromBytes))
     }
 
