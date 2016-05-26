@@ -27,6 +27,36 @@ trait ConfigRepo {
       Await.ready(ConfigRepo.this.set(path, value, version), timeout)
     }
   }
+
+  object rich {
+
+    def get[T: Manifest](path: String): Future[Config[T]] = {
+      ConfigRepo.this.get(path).map(bytes => bytes.map(ConfigSerializer[T]().fromBytes))
+    }
+
+    def set[T: Manifest](path: String, value: T): Future[Unit] = {
+      ConfigRepo.this.set(path, ConfigSerializer[T]().toBytes(value))
+    }
+
+    def set[T: Manifest](path: String, value: T, version: Int): Future[Unit] = {
+      ConfigRepo.this.set(path, ConfigSerializer[T]().toBytes(value), version)
+    }
+
+    object sync {
+
+      def get[T: Manifest](path: String)(implicit timeout: Duration) = {
+        Await.result(rich.this.get(path), timeout)
+      }
+
+      def set[T: Manifest](path: String, value: T)(implicit timeout: Duration) = {
+        Await.ready(rich.this.set(path, value), timeout)
+      }
+
+      def set[T: Manifest](path: String, value: T, version: Int)(implicit timeout: Duration) = {
+        Await.ready(rich.this.set(path, value, version), timeout)
+      }
+    }
+  }
 }
 
 case class Config[T](path: String, value: T, version: Int) {
