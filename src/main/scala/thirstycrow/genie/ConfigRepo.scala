@@ -11,6 +11,8 @@ trait ConfigRepo {
 
   def set(path: String, value: Array[Byte]): Future[Unit]
 
+  def set(path: String, value: Array[Byte], version: Int): Future[Unit]
+
   object sync {
 
     def get(path: String)(implicit timeout: Duration) = {
@@ -20,13 +22,19 @@ trait ConfigRepo {
     def set(path: String, value: Array[Byte])(implicit timeout: Duration) = {
       Await.ready(ConfigRepo.this.set(path, value), timeout)
     }
+
+    def set(path: String, value: Array[Byte], version: Int)(implicit timeout: Duration) = {
+      Await.ready(ConfigRepo.this.set(path, value, version), timeout)
+    }
   }
 }
 
-case class Config[T](path: String, value: T) {
+case class Config[T](path: String, value: T, version: Int) {
   def map[U](conv: T => U): Config[U] = {
-    new Config(path, conv(value))
+    new Config(path, conv(value), version)
   }
 }
 
 case class ConfigNotFound(path: String) extends RuntimeException(path)
+
+case class ConfigUpdated(path: String) extends RuntimeException(path)

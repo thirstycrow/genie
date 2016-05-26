@@ -17,7 +17,17 @@ class SimpleConfigRepo extends ConfigRepo {
   }
 
   def set(path: String, value: Array[Byte]): Future[Unit] = {
-    configs.put(path, Config(path, value))
+    configs.put(path, Config(path, value, currentVersion(path) + 1))
     Future.Done
   }
+
+  def set(path: String, value: Array[Byte], version: Int): Future[Unit] = {
+    if (version != currentVersion(path)) {
+      throw ConfigUpdated(path)
+    }
+    configs.put(path, Config(path, value, version + 1))
+    Future.Done
+  }
+
+  private def currentVersion(path: String) = configs.get(path).map(_.version).getOrElse(0)
 }
