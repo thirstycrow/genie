@@ -4,6 +4,7 @@ import com.twitter.util.Future
 import com.twitter.zk.ZkClient
 import org.apache.zookeeper.KeeperException.NoNodeException
 import org.apache.zookeeper.KeeperException.BadVersionException
+import com.twitter.zk.ZNode
 
 class ZkConfigRepo(zkClient: ZkClient) extends ConfigRepo {
 
@@ -25,12 +26,19 @@ class ZkConfigRepo(zkClient: ZkClient) extends ConfigRepo {
   def set(path: String, value: Array[Byte]): Future[Unit] = {
     val node = zkClient(regularize(path))
     node.setData(value, -1).unit.rescue {
-      case ex: NoNodeException =>
-        node.create(value).unit
+      case ex: NoNodeException => create(node, value)
     }
   }
 
   private def regularize(path: String) = {
     if (path.startsWith("/")) path else "/" + path
+  }
+
+  private def create(node: ZNode, value: Array[Byte]): Future[Unit] = {
+    node.create(value).unit.rescue {
+      case ex: NoNodeException =>
+        create(node.parent, Array.empty)
+          .before(node.create(value).unit)
+    }
   }
 }

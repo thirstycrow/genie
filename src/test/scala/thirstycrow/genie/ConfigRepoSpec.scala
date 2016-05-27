@@ -57,8 +57,15 @@ abstract class ConfigRepoSpec extends FlatSpec with Matchers {
     repo.sync.get(path).map(new String(_)) shouldBe Config(path, newValue, 1)
   }
 
-  it should "force update a config even if not existing" in {
+  it should "force update a config even if the config node dose not exist" in {
     val path = nextPath
+    val value = nextValue
+    repo.sync.set(path, value.getBytes)
+    repo.sync.get(path).map(new String(_)) shouldBe Config(path, value, 0)
+  }
+
+  it should "force update a config even if any ancestor node dose not exist" in {
+    val path = Seq.fill(3)(nextPath).mkString("/")
     val value = nextValue
     repo.sync.set(path, value.getBytes)
     repo.sync.get(path).map(new String(_)) shouldBe Config(path, value, 0)
