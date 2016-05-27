@@ -9,6 +9,8 @@ lazy val genie = project
   .settings(
     libraryDependencies ++= Seq(
       lib.finagle.core,
+      lib.util.zk,
+      lib.curator.test % "test",
       lib.scalaTest % "test"
     )
   )

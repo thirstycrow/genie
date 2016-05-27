@@ -29,5 +29,5 @@ class SimpleConfigRepo extends ConfigRepo {
     Future.Done
   }
 
-  private def currentVersion(path: String) = configs.get(path).map(_.version).getOrElse(0)
+  private def currentVersion(path: String) = configs.get(path).map(_.version).getOrElse(-1)
 }

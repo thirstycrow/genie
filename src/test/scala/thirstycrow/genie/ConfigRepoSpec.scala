@@ -2,71 +2,105 @@ package thirstycrow.genie
 
 import java.util.concurrent.atomic.AtomicInteger
 
+import org.apache.curator.test.TestingServer
+import org.apache.zookeeper.ZooDefs.Ids
+import org.apache.zookeeper.ZooDefs.Perms
+import org.apache.zookeeper.data.ACL
+import org.scalatest.BeforeAndAfterAll
 import org.scalatest.Finders
 import org.scalatest.FlatSpec
 import org.scalatest.Matchers
 
 import com.twitter.conversions.time.intToTimeableNumber
+import com.twitter.finagle.util.DefaultTimer
+import com.twitter.zk.ZkClient
 
-abstract class ConfigRepoSpec(repo: ConfigRepo) extends FlatSpec with Matchers {
+abstract class ConfigRepoSpec extends FlatSpec with Matchers {
 
   implicit val futureTimeout = 1 second
 
-  it should "set/get config" in {
-    val path = Path.next
-    val value = "test config"
+  val repo: ConfigRepo
 
+  it should "cause an error when trying to get a missing config" in {
+    val path = nextPath
     the[ConfigNotFound] thrownBy repo.sync.get(path)
+  }
 
+  it should "get an existing config" in {
+    val path = nextPath
+    val value = nextValue
     repo.sync.set(path, value.getBytes)
-    repo.sync.get(path).map(new String(_)) shouldBe Config(path, value, 1)
+    repo.sync.get(path).map(new String(_)) shouldBe Config(path, value, 0)
   }
 
-  it should "not set a config when the version number does not match" in {
-    val path = Path.next
-    val value1 = Path.next
-
-    repo.sync.set(path, value1.getBytes)
-    repo.sync.get(path).map(new String(_)) shouldBe Config(path, value1, 1)
-
-    val value2 = Path.next
-    the[ConfigUpdated] thrownBy repo.sync.set(path, value2.getBytes, 2)
+  it should "cause an error when trying to update a missing config" in {
+    val path = nextPath
+    val value = nextValue
+    the[ConfigUpdated] thrownBy repo.sync.set(path, value.getBytes, 0)
+    the[ConfigNotFound] thrownBy repo.sync.get(path)
   }
 
-  it should "increment the version number when sets a config" in {
-    val path = Path.next
-    val value1 = Path.next
-
-    repo.sync.set(path, value1.getBytes)
-    repo.sync.get(path).map(new String(_)) shouldBe Config(path, value1, 1)
-
-    val value2 = Path.next
-    repo.sync.set(path, value2.getBytes)
-    repo.sync.get(path).map(new String(_)) shouldBe Config(path, value2, 2)
-
-    val value3 = Path.next
-    repo.sync.set(path, value3.getBytes, 2)
-    repo.sync.get(path).map(new String(_)) shouldBe Config(path, value3, 3)
+  it should "cause an error when trying to update an existing config with unmatching version number" in {
+    val path = nextPath
+    val value = nextValue
+    repo.sync.set(path, value.getBytes)
+    the[ConfigUpdated] thrownBy repo.sync.set(path, nextValue.getBytes, 1)
+    repo.sync.get(path).map(new String(_)) shouldBe Config(path, value, 0)
   }
 
-  it should "set/get generic config" in {
-    val path = Path.next
-    val value1 = "test config"
-
-    val repo = this.repo.rich.sync
-
-    repo.set(path, value1)
-    repo.get(path) shouldBe Config(path, value1, 1)
-
-    val value2 = "updated config"
-    repo.set(path, value2)
-    repo.get(path) shouldBe Config(path, value2, 2)
+  it should "update an existing config with matching version number, and increment the version number" in {
+    val path = nextPath
+    val value = nextValue
+    repo.sync.set(path, value.getBytes)
+    val newValue = nextValue
+    repo.sync.set(path, newValue.getBytes, 0)
+    repo.sync.get(path).map(new String(_)) shouldBe Config(path, newValue, 1)
   }
 
-  object Path {
-    private val i = new AtomicInteger(0)
-    def next = "path_" + i.getAndIncrement
+  it should "force update a config even if not existing" in {
+    val path = nextPath
+    val value = nextValue
+    repo.sync.set(path, value.getBytes)
+    repo.sync.get(path).map(new String(_)) shouldBe Config(path, value, 0)
+  }
+
+  it should "force update a config without a version number" in {
+    val path = nextPath
+    val value = nextValue
+    repo.sync.set(path, value.getBytes)
+    val newValue = nextValue
+    repo.sync.set(path, newValue.getBytes)
+    repo.sync.get(path).map(new String(_)) shouldBe Config(path, newValue, 1)
+  }
+
+  private val i = new AtomicInteger(0)
+  def nextPath = "path_" + i.getAndIncrement
+  def nextValue = "value_" + i.getAndIncrement
+}
+
+class SimpleConfigRepoSpec extends ConfigRepoSpec {
+  val repo = new SimpleConfigRepo
+}
+
+class ZkConfigRepoSpec extends ConfigRepoSpec with BeforeAndAfterAll {
+
+  var zkServer: TestingServer = _
+
+  val repo = {
+    implicit val timer = DefaultTimer.twitter
+    zkServer = new TestingServer
+    val zkClient = ZkClient(
+      connectString = s"127.0.0.1:${zkServer.getPort}",
+      sessionTimeout = 4 seconds)
+      .withAcl(Seq(new ACL(Perms.ALL, Ids.ANYONE_ID_UNSAFE)))
+    new ZkConfigRepo(zkClient)
+  }
+
+  override def afterAll() {
+    zkServer.close()
   }
 }
 
-class SimpleConfigRepoSpec extends ConfigRepoSpec(new SimpleConfigRepo)
+object TestZkServer {
+  def apply() = new TestingServer
+}

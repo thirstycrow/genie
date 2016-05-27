@@ -20,11 +20,11 @@ trait ConfigRepo {
     }
 
     def set(path: String, value: Array[Byte])(implicit timeout: Duration) = {
-      Await.ready(ConfigRepo.this.set(path, value), timeout)
+      Await.result(ConfigRepo.this.set(path, value), timeout)
     }
 
     def set(path: String, value: Array[Byte], version: Int)(implicit timeout: Duration) = {
-      Await.ready(ConfigRepo.this.set(path, value, version), timeout)
+      Await.result(ConfigRepo.this.set(path, value, version), timeout)
     }
   }
 
@@ -49,11 +49,11 @@ trait ConfigRepo {
       }
 
       def set[T: Manifest](path: String, value: T)(implicit timeout: Duration) = {
-        Await.ready(rich.this.set(path, value), timeout)
+        Await.result(rich.this.set(path, value), timeout)
       }
 
       def set[T: Manifest](path: String, value: T, version: Int)(implicit timeout: Duration) = {
-        Await.ready(rich.this.set(path, value, version), timeout)
+        Await.result(rich.this.set(path, value, version), timeout)
       }
     }
   }
