@@ -80,6 +80,17 @@ abstract class ConfigRepoSpec extends FlatSpec with Matchers {
     repo.sync.get(path).map(new String(_)) shouldBe Config(path, newValue, 1)
   }
 
+  it should "set/get config with the rich repo api" in {
+    val path = nextPath
+    val value = nextValue
+    val richRepo = repo.rich.sync
+    richRepo.set(path, value)
+    richRepo.get(path) shouldBe Config(path, value, 0)
+    val newValue = nextValue
+    richRepo.set(path, newValue, 0)
+    richRepo.get(path) shouldBe Config(path, newValue, 1)
+  }
+
   private val i = new AtomicInteger(0)
   def nextPath = "path_" + i.getAndIncrement
   def nextValue = "value_" + i.getAndIncrement
