@@ -1,17 +1,20 @@
 package thirstycrow.genie
 
-import com.twitter.util.Var
-import com.twitter.util.Future
-import com.twitter.util.Duration
-import com.twitter.util.Await
+import com.twitter.util.{Await, Duration, Future, Var}
 
 trait ConfigRepo {
 
   def get(path: String): Future[Config[Array[Byte]]]
 
+  def monitor(path: String): Var[Future[Config[Array[Byte]]]]
+
   def set(path: String, value: Array[Byte]): Future[Unit]
 
   def set(path: String, value: Array[Byte], version: Int): Future[Unit]
+
+  def del(path: String): Future[Unit]
+
+  def del(path: String, version: Int): Future[Unit]
 
   object sync {
 
@@ -25,6 +28,14 @@ trait ConfigRepo {
 
     def set(path: String, value: Array[Byte], version: Int)(implicit timeout: Duration) = {
       Await.result(ConfigRepo.this.set(path, value, version), timeout)
+    }
+
+    def del(path: String)(implicit timeout: Duration) = {
+      Await.result(ConfigRepo.this.del(path), timeout)
+    }
+
+    def del(path: String, version: Int)(implicit timeout: Duration) = {
+      Await.result(ConfigRepo.this.del(path, version), timeout)
     }
   }
 
@@ -42,6 +53,14 @@ trait ConfigRepo {
       ConfigRepo.this.set(path, ConfigSerializer[T]().toBytes(value), version)
     }
 
+    def del(path: String): Future[Unit] = {
+      ConfigRepo.this.del(path)
+    }
+
+    def del[T: Manifest](path: String, version: Int): Future[Unit] = {
+      ConfigRepo.this.del(path, version)
+    }
+
     object sync {
 
       def get[T: Manifest](path: String)(implicit timeout: Duration) = {
@@ -54,6 +73,14 @@ trait ConfigRepo {
 
       def set[T: Manifest](path: String, value: T, version: Int)(implicit timeout: Duration) = {
         Await.result(rich.this.set(path, value, version), timeout)
+      }
+
+      def del(path: String)(implicit timeout: Duration) = {
+        ConfigRepo.this.sync.del(path)
+      }
+
+      def del(path: String, version: Int)(implicit timeout: Duration) = {
+        ConfigRepo.this.sync.del(path, version)
       }
     }
   }

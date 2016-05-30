@@ -1,23 +1,19 @@
 package thirstycrow.genie
 
-import java.util.concurrent.atomic.AtomicInteger
-
-import org.apache.curator.test.TestingServer
-import org.apache.zookeeper.ZooDefs.Ids
-import org.apache.zookeeper.ZooDefs.Perms
-import org.apache.zookeeper.data.ACL
-import org.scalatest.BeforeAndAfterAll
-import org.scalatest.Finders
-import org.scalatest.FlatSpec
-import org.scalatest.Matchers
-
-import com.twitter.conversions.time.intToTimeableNumber
+import com.twitter.conversions.time._
 import com.twitter.finagle.util.DefaultTimer
 import com.twitter.zk.ZkClient
+import com.twitter.util.Await
+import java.util.concurrent.atomic.AtomicInteger
+import org.apache.curator.test.TestingServer
+import org.apache.zookeeper.ZooDefs.{Ids, Perms}
+import org.apache.zookeeper.data.ACL
+import org.scalatest.{BeforeAndAfterAll, FlatSpec, Matchers}
+import scala.io.StdIn
 
 abstract class ConfigRepoSpec extends FlatSpec with Matchers {
 
-  implicit val futureTimeout = 1 second
+  implicit val timeout = 5 second
 
   val repo: ConfigRepo
 
@@ -31,6 +27,29 @@ abstract class ConfigRepoSpec extends FlatSpec with Matchers {
     val value = nextValue
     repo.sync.set(path, value.getBytes)
     repo.sync.get(path).map(new String(_)) shouldBe Config(path, value, 0)
+  }
+
+  it should "monitor an existing config" in {
+    val path = nextPath
+    val value = nextValue
+    repo.sync.set(path, value.getBytes)
+    val v = repo.monitor(path)
+    Await.result(v.sample(), timeout).map(new String(_)) shouldBe Config(path, value, 0)
+    val newValue = nextValue
+    repo.sync.set(path, newValue.getBytes)
+    Thread.sleep(100)
+    Await.result(v.sample(), timeout).map(new String(_)) shouldBe Config(path, newValue, 1)
+  }
+
+  it should "monitor a missing config" in {
+    val path = Seq.fill(3)(nextPath).mkString("/")
+    val value = nextValue
+    val v = repo.monitor(path)
+    the[ConfigNotFound] thrownBy Await.result(v.sample(), timeout)
+    val newValue = nextValue
+    repo.sync.set(path, newValue.getBytes)
+    Thread.sleep(100)
+    Await.result(v.sample(), timeout).map(new String(_)) shouldBe Config(path, newValue, 0)
   }
 
   it should "cause an error when trying to update a missing config" in {
@@ -80,6 +99,33 @@ abstract class ConfigRepoSpec extends FlatSpec with Matchers {
     repo.sync.get(path).map(new String(_)) shouldBe Config(path, newValue, 1)
   }
 
+  it should "cause an error when trying to delete a config with unmatching version number" in {
+    val path = nextPath
+    val value = nextValue
+    repo.sync.set(path, value.getBytes)
+    repo.sync.get(path).map(new String(_)) shouldBe Config(path, value, 0)
+    intercept[ConfigUpdated] {
+      repo.sync.del(path, 1)
+    }
+  }
+
+  it should "delete a config with matching version number" in {
+    val path = nextPath
+    val value = nextValue
+    repo.sync.set(path, value.getBytes)
+    repo.sync.get(path).map(new String(_)) shouldBe Config(path, value, 0)
+    repo.sync.del(path, 0)
+    intercept[ConfigNotFound](repo.sync.get(path))
+  }
+
+  it should "force delete a config" in {
+    val path = nextPath
+    val value = nextValue
+    repo.sync.set(path, value.getBytes)
+    repo.sync.del(path)
+    intercept[ConfigNotFound](repo.sync.get(path))
+  }
+
   it should "set/get config with the rich repo api" in {
     val path = nextPath
     val value = nextValue
@@ -96,10 +142,6 @@ abstract class ConfigRepoSpec extends FlatSpec with Matchers {
   def nextValue = "value_" + i.getAndIncrement
 }
 
-class SimpleConfigRepoSpec extends ConfigRepoSpec {
-  val repo = new SimpleConfigRepo
-}
-
 class ZkConfigRepoSpec extends ConfigRepoSpec with BeforeAndAfterAll {
 
   var zkServer: TestingServer = _
@@ -109,7 +151,7 @@ class ZkConfigRepoSpec extends ConfigRepoSpec with BeforeAndAfterAll {
     zkServer = new TestingServer
     val zkClient = ZkClient(
       connectString = s"127.0.0.1:${zkServer.getPort}",
-      sessionTimeout = 4 seconds)
+      sessionTimeout = 1 seconds)
       .withAcl(Seq(new ACL(Perms.ALL, Ids.ANYONE_ID_UNSAFE)))
     new ZkConfigRepo(zkClient)
   }
@@ -117,8 +159,25 @@ class ZkConfigRepoSpec extends ConfigRepoSpec with BeforeAndAfterAll {
   override def afterAll() {
     zkServer.close()
   }
-}
 
-object TestZkServer {
-  def apply() = new TestingServer
+  it should "keep monitoring a config when the zk server is restored" in {
+    val path = Seq.fill(3)(nextPath).mkString("/")
+    val value = nextValue
+    val v = repo.monitor(path)
+
+    repo.sync.set(path, value.getBytes)
+    Thread.sleep(100)
+    Await.result(v.sample(), timeout).map(new String(_)) shouldBe Config(path, value, 0)
+
+    zkServer.stop()
+
+    val newValue = nextValue
+    intercept[Exception](repo.sync.set(path, newValue.getBytes))
+
+    zkServer.restart()
+
+    repo.sync.set(path, newValue.getBytes)
+    Thread.sleep(100)
+    Await.result(v.sample(), 10.seconds).map(new String(_)) shouldBe Config(path, newValue, 1)
+  }
 }
