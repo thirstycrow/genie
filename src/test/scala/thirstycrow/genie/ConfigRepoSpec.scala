@@ -9,7 +9,6 @@ import org.apache.curator.test.TestingServer
 import org.apache.zookeeper.ZooDefs.{Ids, Perms}
 import org.apache.zookeeper.data.ACL
 import org.scalatest.{BeforeAndAfterAll, FlatSpec, Matchers}
-import scala.io.StdIn
 
 abstract class ConfigRepoSpec extends FlatSpec with Matchers {
 

@@ -92,6 +92,27 @@ case class Config[T](path: String, value: T, version: Int) {
   }
 }
 
+case class Chained[T](config: Seq[T]) {
+
+  def required[U](name: String, p: T => Option[U]): U = {
+    config.reverseIterator.map(p).find(_.isDefined).flatten
+      .getOrElse(throw new IllegalStateException(s"A required config property is missing: $name"))
+  }
+
+  def required[U](p: T => Option[U]): U = {
+    config.reverseIterator.map(p).find(_.isDefined).flatten
+      .getOrElse(throw new IllegalStateException(s"A required config property is missing"))
+  }
+
+  def optional[U](p: T => Option[U]): Option[U] = {
+    config.reverseIterator.map(p).find(_.isDefined).flatten
+  }
+
+  def props(p: T => Map[String, _]): Map[String, _] = {
+    config.iterator.map(p).reduce(_ ++ _)
+  }
+}
+
 case class ConfigNotFound(path: String) extends RuntimeException(path)
 
 case class ConfigUpdated(path: String) extends RuntimeException(path)

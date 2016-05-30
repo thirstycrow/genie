@@ -9,6 +9,8 @@ lazy val genie = project
   .settings(
     libraryDependencies ++= Seq(
       lib.finagle.core,
+      lib.jackson.core.databind,
+      lib.jackson.module.scala,
       lib.util.zk,
       lib.curator.test % "test",
       lib.scalaTest % "test"
