@@ -12,7 +12,7 @@ import org.scalatest.{BeforeAndAfterAll, FlatSpec, Matchers}
 
 abstract class ConfigRepoSpec extends FlatSpec with Matchers {
 
-  implicit val timeout = 5 second
+  implicit val timeout = 1 second
 
   val repo: ConfigRepo
 
@@ -31,24 +31,23 @@ abstract class ConfigRepoSpec extends FlatSpec with Matchers {
   it should "monitor an existing config" in {
     val path = nextPath
     val value = nextValue
+    val m = repo.monitor(path)
     repo.sync.set(path, value.getBytes)
-    val v = repo.monitor(path)
-    Await.result(v.sample(), timeout).map(new String(_)) shouldBe Config(path, value, 0)
+    val v = Await.result(m, timeout)
+    v.sample().map(new String(_)) shouldBe Config(path, value, 0)
     val newValue = nextValue
     repo.sync.set(path, newValue.getBytes)
     Thread.sleep(100)
-    Await.result(v.sample(), timeout).map(new String(_)) shouldBe Config(path, newValue, 1)
+    v.sample().map(new String(_)) shouldBe Config(path, newValue, 1)
   }
 
   it should "monitor a missing config" in {
     val path = Seq.fill(3)(nextPath).mkString("/")
     val value = nextValue
-    val v = repo.monitor(path)
-    the[ConfigNotFound] thrownBy Await.result(v.sample(), timeout)
-    val newValue = nextValue
-    repo.sync.set(path, newValue.getBytes)
-    Thread.sleep(100)
-    Await.result(v.sample(), timeout).map(new String(_)) shouldBe Config(path, newValue, 0)
+    val m = repo.monitor(path)
+    repo.sync.set(path, value.getBytes)
+    val v = Await.result(m, timeout)
+    v.sample().map(new String(_)) shouldBe Config(path, value, 0)
   }
 
   it should "cause an error when trying to update a missing config" in {
@@ -162,11 +161,12 @@ class ZkConfigRepoSpec extends ConfigRepoSpec with BeforeAndAfterAll {
   it should "keep monitoring a config when the zk server is restored" in {
     val path = Seq.fill(3)(nextPath).mkString("/")
     val value = nextValue
-    val v = repo.monitor(path)
 
+    val m = repo.monitor(path)
     repo.sync.set(path, value.getBytes)
-    Thread.sleep(100)
-    Await.result(v.sample(), timeout).map(new String(_)) shouldBe Config(path, value, 0)
+    val v = Await.result(m, timeout)
+
+    v.sample().map(new String(_)) shouldBe Config(path, value, 0)
 
     zkServer.stop()
 
@@ -177,6 +177,6 @@ class ZkConfigRepoSpec extends ConfigRepoSpec with BeforeAndAfterAll {
 
     repo.sync.set(path, newValue.getBytes)
     Thread.sleep(100)
-    Await.result(v.sample(), 10.seconds).map(new String(_)) shouldBe Config(path, newValue, 1)
+    v.sample().map(new String(_)) shouldBe Config(path, newValue, 1)
   }
 }

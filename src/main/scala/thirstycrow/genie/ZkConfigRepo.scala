@@ -1,12 +1,12 @@
 package thirstycrow.genie
 
+import com.twitter.concurrent.Broker
 import com.twitter.conversions.time._
-import com.twitter.util.{Future, Promise, Timer, Var}
+import com.twitter.util._
 import com.twitter.zk.{ZkClient, ZNode}
-import com.twitter.util.{Return, Throw, Updatable}
 import org.apache.zookeeper.KeeperException._
 
-class ZkConfigRepo(val zkClient: ZkClient)(implicit timer: Timer) extends ConfigRepo {
+class ZkConfigRepo(zkClient: ZkClient)(implicit timer: Timer) extends ConfigRepo {
 
   def get(path: String): Future[Config[Array[Byte]]] = {
     zkClient(regularize(path)).getData()
@@ -16,31 +16,18 @@ class ZkConfigRepo(val zkClient: ZkClient)(implicit timer: Timer) extends Config
       }
   }
 
-  def monitor(path: String): Var[Future[Config[Array[Byte]]]] = {
-
-    type Content = Future[Config[Array[Byte]]]
-    type Container = Var[Content] with Updatable[Content]
-
+  def monitor(path: String): Future[Var[Config[Array[Byte]]]] = {
+    val p = Promise[Var[Config[Array[Byte]]] with Updatable[Config[Array[Byte]]]]()
     val node = zkClient(regularize(path))
-    val firstAttempt = Promise[Config[Array[Byte]]]()
-    val v = Var[Future[Config[Array[Byte]]]](firstAttempt)
-
-    def update(f: Future[Config[Array[Byte]]]) {
-      if (v.sample().isDefined) v.update(f)
-      else firstAttempt.become(f)
-    }
+    val broker = new Broker[ZNode.Data]()
 
     def watch() {
       node.getData.watch().onSuccess {
         case ZNode.Watch(Return(node), nextUpdate) =>
-          update(Future(toConfig(path, node)))
-          nextUpdate.onSuccess(_ => watch())
-        case ZNode.Watch(Throw(ex), _) =>
-          if (ex.isInstanceOf[NoNodeException]) {
-            update(Future.exception(ConfigNotFound(path)))
-          } else {
-            update(Future.exception(ex))
+          broker ! node onSuccess { _ =>
+            nextUpdate onSuccess { _ => watch() }
           }
+        case ZNode.Watch(Throw(ex), _) =>
           watchCreation(node).onSuccess(_ => watch())
       }.onFailure {
         case e => tryLater(watch())
@@ -51,9 +38,7 @@ class ZkConfigRepo(val zkClient: ZkClient)(implicit timer: Timer) extends Config
       node.parent.getChildren.watch().flatMap {
         case ZNode.Watch(Return(parent), update) =>
           if (parent.children.exists(_.name == node.name)) Future.Done
-          else {
-            update.unit.before(watchCreation(node))
-          }
+          else update.unit.before(watchCreation(node))
         case ZNode.Watch(Throw(_: NoNodeException), _) =>
           watchCreation(node.parent).before(watchCreation(node))
         case ZNode.Watch(_, _) =>
@@ -71,7 +56,13 @@ class ZkConfigRepo(val zkClient: ZkClient)(implicit timer: Timer) extends Config
 
     watch()
 
-    v
+    broker.recv.sync().onSuccess { node =>
+      p.setValue(Var(toConfig(path, node)))
+      broker.recv.foreach(node =>
+        Await.result(p).update(toConfig(path, node)))
+    }
+
+    p
   }
 
   def set(path: String, value: Array[Byte], version: Int): Future[Unit] = {
@@ -114,3 +105,4 @@ class ZkConfigRepo(val zkClient: ZkClient)(implicit timer: Timer) extends Config
 }
 
 object SystemShutdown extends RuntimeException
+

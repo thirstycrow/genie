@@ -6,7 +6,7 @@ trait ConfigRepo {
 
   def get(path: String): Future[Config[Array[Byte]]]
 
-  def monitor(path: String): Var[Future[Config[Array[Byte]]]]
+  def monitor(path: String): Future[Var[Config[Array[Byte]]]]
 
   def set(path: String, value: Array[Byte]): Future[Unit]
 
@@ -43,6 +43,10 @@ trait ConfigRepo {
 
     def get[T](path: String)(implicit t: T DefaultsTo String, m: Manifest[T]): Future[Config[T]] = {
       ConfigRepo.this.get(path).map(bytes => bytes.map(ConfigSerializer[T]().fromBytes))
+    }
+
+    def monitor[T](path: String)(implicit t: T DefaultsTo String, m: Manifest[T]): Future[Var[Config[T]]] = {
+      ConfigRepo.this.monitor(path).map(_.map(_.map(ConfigSerializer[T]().fromBytes)))
     }
 
     def set[T: Manifest](path: String, value: T): Future[Unit] = {
