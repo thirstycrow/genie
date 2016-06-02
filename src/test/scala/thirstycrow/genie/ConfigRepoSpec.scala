@@ -140,7 +140,9 @@ abstract class ConfigRepoSpec extends FlatSpec with Matchers {
   def nextValue = "value_" + i.getAndIncrement
 }
 
-class ZkConfigRepoSpec extends ConfigRepoSpec with BeforeAndAfterAll {
+trait ZkConfigRepoSupport extends BeforeAndAfterAll {
+
+  self: FlatSpec =>
 
   var zkServer: TestingServer = _
 
@@ -157,6 +159,9 @@ class ZkConfigRepoSpec extends ConfigRepoSpec with BeforeAndAfterAll {
   override def afterAll() {
     zkServer.close()
   }
+}
+
+class ZkConfigRepoSpec extends ConfigRepoSpec with ZkConfigRepoSupport {
 
   it should "keep monitoring a config when the zk server is restored" in {
     val path = Seq.fill(3)(nextPath).mkString("/")

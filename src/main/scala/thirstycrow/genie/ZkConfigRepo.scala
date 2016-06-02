@@ -49,9 +49,7 @@ class ZkConfigRepo(zkClient: ZkClient)(implicit timer: Timer) extends ConfigRepo
     }
 
     def tryLater[T](what: => T) = {
-      val retry = timer.doLater(1.second)(what)
-      val shutdownHook = sys.addShutdownHook(retry.raise(SystemShutdown))
-      retry.ensure(shutdownHook.remove())
+      timer.doLater(1.second)(what)
     }
 
     watch()

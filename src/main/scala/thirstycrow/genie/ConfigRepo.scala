@@ -45,8 +45,20 @@ trait ConfigRepo {
       ConfigRepo.this.get(path).map(bytes => bytes.map(ConfigSerializer[T]().fromBytes))
     }
 
+    def get[T](paths: String*)(implicit t: T DefaultsTo String, m: Manifest[T]): Future[Chained[T]] = {
+      Future.collect(paths.map(get(_)))
+        .map(_.map(_.value))
+        .map(Chained(_))
+    }
+
     def monitor[T](path: String)(implicit t: T DefaultsTo String, m: Manifest[T]): Future[Var[Config[T]]] = {
       ConfigRepo.this.monitor(path).map(_.map(_.map(ConfigSerializer[T]().fromBytes)))
+    }
+
+    def monitor[T](paths: String*)(implicit t: T DefaultsTo String, m: Manifest[T]): Future[Var[Chained[T]]] = {
+      Future.collect(paths.map(monitor(_)))
+        .map(Var.collect(_))
+        .map(_.map(seq => Chained(seq.map(_.value))))
     }
 
     def set[T: Manifest](path: String, value: T): Future[Unit] = {
