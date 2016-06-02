@@ -9,7 +9,6 @@ lazy val genie = project
   .settings(
     libraryDependencies ++= Seq(
       lib.finagle.core,
-      lib.finagle.mysql,
       lib.slf4j.api,
       lib.slf4j.log4jOverSlf4j,
       lib.util.zk

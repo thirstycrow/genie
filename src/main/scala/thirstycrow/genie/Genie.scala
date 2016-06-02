@@ -1,8 +1,6 @@
 package thirstycrow.genie
 
-import com.twitter.finagle
-import com.twitter.util.{ Await, Duration, Future, Var }
-import com.twitter.finagle.exp.mysql.{ Client, Transactions }
+import com.twitter.util.{Await, Duration, Future, Var}
 
 class Genie(val repo: ConfigRepo) {
 
