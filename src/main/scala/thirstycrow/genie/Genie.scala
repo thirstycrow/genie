@@ -1,6 +1,16 @@
 package thirstycrow.genie
 
+import com.twitter.finagle
 import com.twitter.util.{Await, Duration, Future, Var}
+import com.twitter.finagle.exp.mysql.{Client, Transactions}
+import thirstycrow.genie.mysql.{FinagleMysqlRecipe, MysqlClientConfig}
+
+object Genie {
+
+  type MysqlClient = Client with Transactions
+
+  implicit val finagleMysql = FinagleMysqlRecipe
+}
 
 class Genie(val repo: ConfigRepo) {
 
@@ -12,12 +22,12 @@ class Genie(val repo: ConfigRepo) {
 
   def get[T: Manifest](paths: String*)(implicit recipe: Recipe[T]): Future[T] = {
     implicit val m = recipe.m
-    repo.rich.get[recipe.Cfg](paths: _*).map(recipe.convert)
+    repo.rich.get[recipe.Cfg](toAbsolutePaths(paths): _*).map(recipe.convert)
   }
 
   def monitor[T: Manifest](paths: String*)(implicit recipe: Recipe[T]): Future[Var[T]] = {
     implicit val m = recipe.m
-    repo.rich.monitor[recipe.Cfg](paths: _*).map { cfg =>
+    repo.rich.monitor[recipe.Cfg](toAbsolutePaths(paths): _*).map { cfg =>
       val init = recipe.convert(cfg.sample())
       val changes = cfg.changes.map(cfg => recipe.convert(cfg))
       val result = Var(init, changes)
@@ -31,6 +41,13 @@ class Genie(val repo: ConfigRepo) {
           }
       }
       result
+    }
+  }
+
+  private def toAbsolutePaths(paths: Seq[String]) = {
+    paths.foldLeft(Seq.empty[String]) {
+      case (Nil, path) => Seq(path)
+      case (seq @ Seq(head, _*), path) => seq :+ s"${head}/${path}"
     }
   }
 

@@ -3,7 +3,7 @@ package thirstycrow.genie
 import com.twitter.conversions.time._
 import com.twitter.finagle.util.DefaultTimer
 import com.twitter.zk.ZkClient
-import com.twitter.util.Await
+import com.twitter.util.{Await, Future}
 import java.util.concurrent.atomic.AtomicInteger
 import org.apache.curator.test.TestingServer
 import org.apache.zookeeper.ZooDefs.{Ids, Perms}
@@ -37,8 +37,11 @@ abstract class ConfigRepoSpec extends FlatSpec with Matchers {
     v.sample().map(new String(_)) shouldBe Config(path, value, 0)
     val newValue = nextValue
     repo.sync.set(path, newValue.getBytes)
-    Thread.sleep(100)
-    v.sample().map(new String(_)) shouldBe Config(path, newValue, 1)
+    AsyncUtils.keepTrying {
+      Future {
+        v.sample().map(new String(_)) shouldBe Config(path, newValue, 1)
+      }
+    }
   }
 
   it should "monitor a missing config" in {
@@ -156,6 +159,8 @@ trait ZkConfigRepoSupport extends BeforeAndAfterAll {
     new ZkConfigRepo(zkClient)
   }
 
+  val genie = new Genie(repo)
+
   override def afterAll() {
     zkServer.close()
   }
@@ -181,7 +186,10 @@ class ZkConfigRepoSpec extends ConfigRepoSpec with ZkConfigRepoSupport {
     zkServer.restart()
 
     repo.sync.set(path, newValue.getBytes)
-    Thread.sleep(100)
-    v.sample().map(new String(_)) shouldBe Config(path, newValue, 1)
+    AsyncUtils.keepTrying {
+      Future {
+        v.sample().map(new String(_)) shouldBe Config(path, newValue, 1)
+      }
+    }
   }
 }

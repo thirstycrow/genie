@@ -1,2 +1,3 @@
 thirstycrow.genie.StringConfigSerializer
 thirstycrow.genie.BytesConfigSerializer
+thirstycrow.genie.mysql.MysqlClientConfigSerializer

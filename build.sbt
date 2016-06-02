@@ -9,6 +9,9 @@ lazy val genie = project
   .settings(
     libraryDependencies ++= Seq(
       lib.finagle.core,
+      lib.finagle.mysql,
+      lib.jackson.core.databind,
+      lib.jackson.module.scala,
       lib.slf4j.api,
       lib.slf4j.log4jOverSlf4j,
       lib.util.zk
@@ -18,8 +21,10 @@ lazy val genie = project
     },
     libraryDependencies ++= Seq(
       lib.curator.test % "test",
-      lib.scalaTest % "test",
-      lib.logback.classic % "test"
+      lib.embeddedRedis % "test",
+      lib.logback.classic % "test",
+      lib.mysqlConnectorMxj % "test",
+      lib.scalaTest % "test"
     ),
     fork in Test := true
   )

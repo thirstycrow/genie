@@ -12,6 +12,6 @@
     </root>
 
     <logger name="thirstycrow.genie" level="DEBUG" />
-    <logger name="org.apache.zookeeper.ClientCnxn" level="INFO" />
+    <logger name="org.apache.zookeeper.ClientCnxn" level="ERROR" />
 
 </configuration>

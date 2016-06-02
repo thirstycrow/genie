@@ -1,6 +1,7 @@
 package thirstycrow.genie
 
 import com.twitter.conversions.time._
+import com.twitter.util.Future
 import java.util.concurrent.atomic.AtomicInteger
 import org.scalatest.{ FlatSpec, Matchers }
 
@@ -24,7 +25,6 @@ class GenieSpec extends FlatSpec with Matchers with ZkConfigRepoSupport {
   }
 
   it should "monitor closeable correctly" in {
-    val genie = new Genie(repo)
     val path = nextPath
     val value = nextValue
 
@@ -35,10 +35,13 @@ class GenieSpec extends FlatSpec with Matchers with ZkConfigRepoSupport {
 
     val newValue = nextValue
     genie.syncRichRepo.set(path, newValue)
-    Thread.sleep(100)
-    val newFoo = fooVar.sample()
-    newFoo.closed shouldBe false
-    foo.closed shouldBe true
+    AsyncUtils.keepTrying {
+      Future {
+        val newFoo = fooVar.sample()
+        newFoo.closed shouldBe false
+        foo.closed shouldBe true
+      }
+    }
   }
 
   private val i = new AtomicInteger(0)
