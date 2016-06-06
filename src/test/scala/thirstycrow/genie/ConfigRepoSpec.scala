@@ -1,5 +1,6 @@
 package thirstycrow.genie
 
+import com.twitter.concurrent.Broker
 import com.twitter.conversions.time._
 import com.twitter.finagle.util.DefaultTimer
 import com.twitter.zk.ZkClient
@@ -31,26 +32,22 @@ abstract class ConfigRepoSpec extends FlatSpec with Matchers {
   it should "monitor an existing config" in {
     val path = nextPath
     val value = nextValue
-    val m = repo.monitor(path)
+    val c = repo.changes(path)
+
     repo.sync.set(path, value.getBytes)
-    val v = Await.result(m, timeout)
-    v.sample().map(new String(_)) shouldBe Config(path, value, 0)
+    Await.result(c.toFuture(), timeout).map(new String(_)) shouldBe Config(path, value, 0)
+
     val newValue = nextValue
     repo.sync.set(path, newValue.getBytes)
-    AsyncUtils.keepTrying {
-      Future {
-        v.sample().map(new String(_)) shouldBe Config(path, newValue, 1)
-      }
-    }
+    Await.result(c.toFuture(), timeout).map(new String(_)) shouldBe Config(path, newValue, 1)
   }
 
   it should "monitor a missing config" in {
     val path = Seq.fill(3)(nextPath).mkString("/")
     val value = nextValue
-    val m = repo.monitor(path)
+    val m = repo.changes(path)
     repo.sync.set(path, value.getBytes)
-    val v = Await.result(m, timeout)
-    v.sample().map(new String(_)) shouldBe Config(path, value, 0)
+    Await.result(m.toFuture(), timeout).map(new String(_)) shouldBe Config(path, value, 0)
   }
 
   it should "cause an error when trying to update a missing config" in {
@@ -172,11 +169,10 @@ class ZkConfigRepoSpec extends ConfigRepoSpec with ZkConfigRepoSupport {
     val path = Seq.fill(3)(nextPath).mkString("/")
     val value = nextValue
 
-    val m = repo.monitor(path)
+    val broker = new Broker[Config[Array[Byte]]]
+    repo.changes(path).respond(broker ! _)
     repo.sync.set(path, value.getBytes)
-    val v = Await.result(m, timeout)
-
-    v.sample().map(new String(_)) shouldBe Config(path, value, 0)
+    Await.result(broker.recv.sync, timeout).map(new String(_)) shouldBe Config(path, value, 0)
 
     zkServer.stop()
 
@@ -186,10 +182,6 @@ class ZkConfigRepoSpec extends ConfigRepoSpec with ZkConfigRepoSupport {
     zkServer.restart()
 
     repo.sync.set(path, newValue.getBytes)
-    AsyncUtils.keepTrying {
-      Future {
-        v.sample().map(new String(_)) shouldBe Config(path, newValue, 1)
-      }
-    }
+    Await.result(broker.recv.sync, timeout).map(new String(_)) shouldBe Config(path, newValue, 1)
   }
 }

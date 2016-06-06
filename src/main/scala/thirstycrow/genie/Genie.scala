@@ -1,7 +1,7 @@
 package thirstycrow.genie
 
 import com.twitter.finagle
-import com.twitter.util.{Await, Duration, Future, Var}
+import com.twitter.util.{Await, Duration, Event, Future}
 import com.twitter.finagle.exp.mysql.{Client, Transactions}
 import thirstycrow.genie.mysql.{FinagleMysqlRecipe, MysqlClientConfig}
 
@@ -14,33 +14,21 @@ object Genie {
 
 class Genie(val repo: ConfigRepo) {
 
-  val syncRepo = repo.sync
-
-  val richRepo = repo.rich
-
-  val syncRichRepo = repo.rich.sync
-
   def get[T: Manifest](paths: String*)(implicit recipe: Recipe[T]): Future[T] = {
     implicit val m = recipe.m
     repo.rich.get[recipe.Cfg](toAbsolutePaths(paths): _*).map(recipe.convert)
   }
 
-  def monitor[T: Manifest](paths: String*)(implicit recipe: Recipe[T]): Future[Var[T]] = {
+  def changes[T: Manifest](paths: String*)(implicit recipe: Recipe[T]): Event[T] = {
     implicit val m = recipe.m
-    repo.rich.monitor[recipe.Cfg](toAbsolutePaths(paths): _*).map { cfg =>
-      val init = recipe.convert(cfg.sample())
-      val changes = cfg.changes.map(cfg => recipe.convert(cfg))
-      val result = Var(init, changes)
-      recipe match {
-        case recipe: CloseableRecipe[T] =>
-          result.changes.sliding(2).collect {
-            case Seq(init) => None
-            case Seq(current, next) => Some(current)
-          }.respond {
-            last => last.map(recipe.close(_))
-          }
-      }
-      result
+    val result = repo.rich.changes[recipe.Cfg](toAbsolutePaths(paths): _*)
+      .map(recipe.convert)
+    result.sliding(2).collect {
+      case Seq(init) =>
+        init
+      case Seq(last, current) =>
+        recipe.close(last)
+        current
     }
   }
 
@@ -56,10 +44,6 @@ class Genie(val repo: ConfigRepo) {
     def get[T: Manifest](paths: String*)(implicit recipe: Recipe[T], timeout: Duration): T = {
       Await.result(Genie.this.get[T](paths: _*))
     }
-
-    def monitor[T: Manifest](paths: String*)(implicit recipe: Recipe[T], timeout: Duration): Var[T] = {
-      Await.result(Genie.this.monitor[T](paths: _*))
-    }
   }
 }
 
@@ -70,9 +54,6 @@ abstract class Recipe[T: Manifest] {
   val m: Manifest[Cfg]
 
   def convert(cfg: Chained[Cfg]): T
-}
-
-trait CloseableRecipe[T] { self: Recipe[T] =>
 
   def close(target: T): Unit
 }

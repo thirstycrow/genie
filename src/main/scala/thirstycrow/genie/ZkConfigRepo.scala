@@ -1,6 +1,5 @@
 package thirstycrow.genie
 
-import com.twitter.concurrent.Broker
 import com.twitter.conversions.time._
 import com.twitter.util._
 import com.twitter.zk.{ZkClient, ZNode}
@@ -16,19 +15,15 @@ class ZkConfigRepo(zkClient: ZkClient)(implicit timer: Timer) extends ConfigRepo
       }
   }
 
-  def monitor(path: String): Future[Var[Config[Array[Byte]]]] = {
-    val p = Promise[Var[Config[Array[Byte]]] with Updatable[Config[Array[Byte]]]]()
+  def monitor(path: String): Var[Option[Config[Array[Byte]]]] = {
     val node = zkClient(regularize(path))
-    val broker = new Broker[ZNode.Data]()
 
-    def watch() {
-      node.getData.watch().onSuccess {
+    def watch(): Future[(ZNode.Data, Future[Unit])] = {
+      node.getData.watch().flatMap {
         case ZNode.Watch(Return(node), nextUpdate) =>
-          broker ! node onSuccess { _ =>
-            nextUpdate onSuccess { _ => watch() }
-          }
+          Future.value((node, nextUpdate.unit))
         case ZNode.Watch(Throw(ex), _) =>
-          watchCreation(node).onSuccess(_ => watch())
+          watchCreation(node).flatMap(_ => watch())
       }.onFailure {
         case e => tryLater(watch())
       }
@@ -52,15 +47,28 @@ class ZkConfigRepo(zkClient: ZkClient)(implicit timer: Timer) extends ConfigRepo
       timer.doLater(1.second)(what)
     }
 
-    watch()
+    val v = Var.async[Option[(ZNode.Data, Future[Unit])]](None) { updatable =>
 
-    broker.recv.sync().onSuccess { node =>
-      p.setValue(Var(toConfig(path, node)))
-      broker.recv.foreach(node =>
-        Await.result(p).update(toConfig(path, node)))
+      def monitor() {
+        watch().onSuccess {
+          case result @ (node, nextUpdate) =>
+            updatable.update(Some(result))
+            nextUpdate.onSuccess(_ => monitor())
+        }
+      }
+
+      monitor()
+
+      Closable.make { deadline =>
+        Future(
+          updatable.asInstanceOf[Var[(ZNode.Data, Future[Unit])]]
+            .sample()
+            ._2
+            .raise(new FutureCancelledException))
+      }
     }
 
-    p
+    v.map(_.map { case (node, _) => toConfig(path, node) })
   }
 
   def set(path: String, value: Array[Byte], version: Int): Future[Unit] = {
@@ -101,6 +109,3 @@ class ZkConfigRepo(zkClient: ZkClient)(implicit timer: Timer) extends ConfigRepo
     Config(path, node.bytes, node.stat.getVersion)
   }
 }
-
-object SystemShutdown extends RuntimeException
-

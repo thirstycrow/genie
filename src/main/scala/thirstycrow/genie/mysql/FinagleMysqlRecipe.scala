@@ -2,11 +2,10 @@ package thirstycrow.genie.mysql
 
 import com.twitter.finagle
 import com.twitter.finagle.exp.mysql.{Client, Transactions}
-import thirstycrow.genie.{Chained, CloseableRecipe, Recipe}
+import thirstycrow.genie.{Chained, Recipe}
 
 object FinagleMysqlRecipe
-    extends Recipe[Client with Transactions]
-    with CloseableRecipe[Client with Transactions] {
+    extends Recipe[Client with Transactions] {
 
   type Cfg = MysqlClientConfig
 

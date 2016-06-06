@@ -1,12 +1,20 @@
 package thirstycrow.genie
 
-import com.twitter.util.{Await, Duration, Future, Var}
+import com.twitter.util.{Await, Duration, Event, Future, Var}
+import java.util.Arrays
 
 trait ConfigRepo {
 
   def get(path: String): Future[Config[Array[Byte]]]
 
-  def monitor(path: String): Future[Var[Config[Array[Byte]]]]
+  def monitor(path: String): Var[Option[Config[Array[Byte]]]]
+
+  def changes(path: String): Event[Config[Array[Byte]]] = {
+    monitor(path).changes
+      .filter(_.nonEmpty)
+      .map(_.get)
+      .dedupWith((a, b) => a.version == b.version && Arrays.equals(a.value, b.value))
+  }
 
   def set(path: String, value: Array[Byte]): Future[Unit]
 
@@ -51,14 +59,24 @@ trait ConfigRepo {
         .map(Chained(_))
     }
 
-    def monitor[T](path: String)(implicit t: T DefaultsTo String, m: Manifest[T]): Future[Var[Config[T]]] = {
-      ConfigRepo.this.monitor(path).map(_.map(_.map(ConfigSerializer[T]().fromBytes)))
+    def monitor[T](path: String)(implicit t: T DefaultsTo String, m: Manifest[T]): Var[Option[T]] = {
+      ConfigRepo.this.monitor(path).map(_.map(_.map(ConfigSerializer[T]().fromBytes).value))
     }
 
-    def monitor[T](paths: String*)(implicit t: T DefaultsTo String, m: Manifest[T]): Future[Var[Chained[T]]] = {
-      Future.collect(paths.map(monitor(_)))
-        .map(Var.collect(_))
-        .map(_.map(seq => Chained(seq.map(_.value))))
+    def monitor[T](paths: String*)(implicit t: T DefaultsTo String, m: Manifest[T]): Var[Option[Chained[T]]] = {
+      Var.collect(paths.map(monitor(_))).map { seqOpt =>
+        if (seqOpt.exists(_.isEmpty)) None
+        else Some(Chained(seqOpt.map(_.get)))
+      }
+    }
+
+    def changes[T](path: String)(implicit t: T DefaultsTo String, m: Manifest[T]): Event[Config[T]] = {
+      ConfigRepo.this.changes(path)
+        .map(_.map(ConfigSerializer[T]().fromBytes))
+    }
+
+    def changes[T](paths: String*)(implicit t: T DefaultsTo String, m: Manifest[T]): Event[Chained[T]] = {
+      monitor(paths: _*).changes.filter(_.nonEmpty).map(_.get)
     }
 
     def set[T: Manifest](path: String, value: T): Future[Unit] = {
