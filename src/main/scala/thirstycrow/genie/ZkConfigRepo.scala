@@ -3,6 +3,7 @@ package thirstycrow.genie
 import com.twitter.conversions.time._
 import com.twitter.util._
 import com.twitter.zk.{ZkClient, ZNode}
+import java.util.Arrays
 import org.apache.zookeeper.KeeperException._
 
 class ZkConfigRepo(zkClient: ZkClient)(implicit timer: Timer) extends ConfigRepo {
@@ -69,6 +70,13 @@ class ZkConfigRepo(zkClient: ZkClient)(implicit timer: Timer) extends ConfigRepo
     }
 
     v.map(_.map { case (node, _) => toConfig(path, node) })
+  }
+
+  def changes(path: String): Event[Config[Array[Byte]]] = {
+    monitor(path).changes
+      .filter(_.nonEmpty)
+      .map(_.get)
+      .dedupWith((a, b) => a.version == b.version && Arrays.equals(a.value, b.value))
   }
 
   def set(path: String, value: Array[Byte], version: Int): Future[Unit] = {

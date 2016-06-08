@@ -12,6 +12,7 @@ lazy val genie = project
       lib.finagle.mysql,
       lib.jackson.core.databind,
       lib.jackson.module.scala,
+      lib.quill.finagleMysql % "optional",
       lib.slf4j.api,
       lib.slf4j.log4jOverSlf4j,
       lib.util.zk
@@ -26,5 +27,6 @@ lazy val genie = project
       lib.mysqlConnectorMxj % "test",
       lib.scalaTest % "test"
     ),
-    fork in Test := true
+    fork in Test := true,
+    coverageEnabled := true
   )

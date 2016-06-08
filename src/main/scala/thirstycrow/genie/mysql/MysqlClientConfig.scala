@@ -19,6 +19,7 @@ case class MysqlClientConfig(
   port: Option[Int] = None,
   user: Option[String] = None,
   password: Option[String] = None,
+  database: Option[String] = None,
   params: Map[String, _] = Map.empty)
 
-class MysqlClientConfigSerializer extends JsonConfigSerializer[MysqlClientConfig]
+object MysqlClientConfigRecipe extends JsonConfigSerializer[MysqlClientConfig]

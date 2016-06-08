@@ -9,6 +9,7 @@ object lib {
     val jackson = "2.7.2"
     val logback = "1.1.3"
     val mysqlConnectorMxj = "5.0.12"
+    val quill = "0.6.0"
     val scalaTest = "2.2.4"
     val slf4j = "1.7.12"
     val util = "6.33.0"
@@ -39,6 +40,10 @@ object lib {
   }
 
   val mysqlConnectorMxj = "mysql" % "mysql-connector-mxj" % V.mysqlConnectorMxj
+
+  object quill {
+    val finagleMysql = "io.getquill" %% "quill-finagle-mysql" % V.quill
+  }
 
   val scalaTest = "org.scalatest" %% "scalatest" % V.scalaTest
 

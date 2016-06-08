@@ -7,14 +7,7 @@ trait ConfigRepo {
 
   def get(path: String): Future[Config[Array[Byte]]]
 
-  def monitor(path: String): Var[Option[Config[Array[Byte]]]]
-
-  def changes(path: String): Event[Config[Array[Byte]]] = {
-    monitor(path).changes
-      .filter(_.nonEmpty)
-      .map(_.get)
-      .dedupWith((a, b) => a.version == b.version && Arrays.equals(a.value, b.value))
-  }
+  def changes(path: String): Event[Config[Array[Byte]]]
 
   def set(path: String, value: Array[Byte]): Future[Unit]
 
@@ -24,97 +17,67 @@ trait ConfigRepo {
 
   def del(path: String, version: Int): Future[Unit]
 
-  object sync {
-
-    def get(path: String)(implicit timeout: Duration) = {
-      Await.result(ConfigRepo.this.get(path), timeout)
-    }
-
-    def set(path: String, value: Array[Byte])(implicit timeout: Duration) = {
-      Await.result(ConfigRepo.this.set(path, value), timeout)
-    }
-
-    def set(path: String, value: Array[Byte], version: Int)(implicit timeout: Duration) = {
-      Await.result(ConfigRepo.this.set(path, value, version), timeout)
-    }
-
-    def del(path: String)(implicit timeout: Duration) = {
-      Await.result(ConfigRepo.this.del(path), timeout)
-    }
-
-    def del(path: String, version: Int)(implicit timeout: Duration) = {
-      Await.result(ConfigRepo.this.del(path, version), timeout)
-    }
-  }
-
   object rich {
 
-    def get[T](path: String)(implicit t: T DefaultsTo String, m: Manifest[T]): Future[Config[T]] = {
-      ConfigRepo.this.get(path).map(bytes => bytes.map(ConfigSerializer[T]().fromBytes))
+    def get[T](path: String)(implicit t: T DefaultsTo String, conv: ConfigurableRecipe[T]): Future[Config[T]] = {
+      ConfigRepo.this.get(path).map(bytes => bytes.map(conv.fromBytes))
     }
 
-    def get[T](paths: String*)(implicit t: T DefaultsTo String, m: Manifest[T]): Future[Chained[T]] = {
-      Future.collect(paths.map(get(_)))
-        .map(_.map(_.value))
-        .map(Chained(_))
+    def getChained[T](paths: String*)(implicit t: T, conv: ChainableRecipe[T]): Future[Chained[T]] = {
+      Future.collect(toAbsolute(paths).map(ConfigRepo.this.get(_).map(_.value))).map(conv.fromBytes)
     }
 
-    def monitor[T](path: String)(implicit t: T DefaultsTo String, m: Manifest[T]): Var[Option[T]] = {
-      ConfigRepo.this.monitor(path).map(_.map(_.map(ConfigSerializer[T]().fromBytes).value))
+    def get[T](paths: String*)(implicit recipe: MultiConfigurableRecipe[T]): Future[T] = {
+      Future.collect(toAbsolute(paths).map(ConfigRepo.this.get(_).map(_.value))).map(recipe.fromBytes)
     }
 
-    def monitor[T](paths: String*)(implicit t: T DefaultsTo String, m: Manifest[T]): Var[Option[Chained[T]]] = {
-      Var.collect(paths.map(monitor(_))).map { seqOpt =>
-        if (seqOpt.exists(_.isEmpty)) None
-        else Some(Chained(seqOpt.map(_.get)))
-      }
+    def changes[T](path: String)(implicit t: T DefaultsTo String, conv: Recipe[T] with ConfigurableRecipe[T]): Event[Config[T]] = {
+      val e = ConfigRepo.this.changes(path).map(_.map(conv.fromBytes))
+      closeLastOnChange[Config[T]](e, c => conv.close(c.value))
     }
 
-    def changes[T](path: String)(implicit t: T DefaultsTo String, m: Manifest[T]): Event[Config[T]] = {
-      ConfigRepo.this.changes(path)
-        .map(_.map(ConfigSerializer[T]().fromBytes))
+    def changes[T](paths: String*)(implicit t: T DefaultsTo String, conv: Recipe[T] with MultiConfigurableRecipe[T]): Event[T] = {
+      val e = toAbsolute(paths).map(ConfigRepo.this.changes)
+        .map(_.map(Seq(_)))
+        .reduce { (a, b) =>
+          a.joinLast(b).map {
+            case (a, b) => a ++ b
+          }
+        }
+        .map(cfgs => conv.fromBytes(cfgs.map(_.value)))
+      closeLastOnChange(e, conv.close)
     }
 
-    def changes[T](paths: String*)(implicit t: T DefaultsTo String, m: Manifest[T]): Event[Chained[T]] = {
-      monitor(paths: _*).changes.filter(_.nonEmpty).map(_.get)
+    def set[T](path: String, value: T)(implicit conv: SerializableRecipe[T]): Future[Unit] = {
+      ConfigRepo.this.set(path, conv.toBytes(value))
     }
 
-    def set[T: Manifest](path: String, value: T): Future[Unit] = {
-      ConfigRepo.this.set(path, ConfigSerializer[T]().toBytes(value))
-    }
-
-    def set[T: Manifest](path: String, value: T, version: Int): Future[Unit] = {
-      ConfigRepo.this.set(path, ConfigSerializer[T]().toBytes(value), version)
+    def set[T](path: String, value: T, version: Int)(implicit conv: SerializableRecipe[T]): Future[Unit] = {
+      ConfigRepo.this.set(path, conv.toBytes(value), version)
     }
 
     def del(path: String): Future[Unit] = {
       ConfigRepo.this.del(path)
     }
 
-    def del[T: Manifest](path: String, version: Int): Future[Unit] = {
+    def del(path: String, version: Int): Future[Unit] = {
       ConfigRepo.this.del(path, version)
     }
 
-    object sync {
-
-      def get[T: Manifest](path: String)(implicit timeout: Duration) = {
-        Await.result(rich.this.get(path), timeout)
+    private def toAbsolute(paths: Seq[String]) = {
+      paths.foldLeft(Seq.empty[String]) {
+        case (Nil, path) => Seq(path)
+        case (seq @ Seq(head, _*), path) => seq :+ s"${head}/${path}"
       }
+    }
 
-      def set[T: Manifest](path: String, value: T)(implicit timeout: Duration) = {
-        Await.result(rich.this.set(path, value), timeout)
-      }
-
-      def set[T: Manifest](path: String, value: T, version: Int)(implicit timeout: Duration) = {
-        Await.result(rich.this.set(path, value, version), timeout)
-      }
-
-      def del(path: String)(implicit timeout: Duration) = {
-        ConfigRepo.this.sync.del(path)
-      }
-
-      def del(path: String, version: Int)(implicit timeout: Duration) = {
-        ConfigRepo.this.sync.del(path, version)
+    private def closeLastOnChange[T](e: Event[T], close: T => Unit) = {
+      e.sliding(2).collect {
+        case Seq(init) =>
+          init
+        case Seq(last, current) =>
+          close(last)
+          current
       }
     }
   }

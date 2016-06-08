@@ -1,9 +1,6 @@
 package thirstycrow.genie
 
-import org.scalatest.FlatSpec
-import org.scalatest.Matchers
-
-class ChainedSpec extends FlatSpec with Matchers {
+class ChainedSpec extends BaseSpec {
 
   case class TestConfig(
     host: Option[String],
